@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Archive, CheckCircle2, FileText, GitCompareArrows, LayoutDashboard, LogOut, Package, Phone, Plus, ScrollText, SearchX, ShieldCheck, Users } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
+import { Archive, Check, CheckCircle2, Copy, FileText, GitCompareArrows, LayoutDashboard, LogOut, Package, Phone, Plus, ScrollText, SearchX, ShieldCheck, Users } from 'lucide-react-native';
 import { RoleHeader } from '../../components/RoleHeader';
 import { HeroIllustration } from '../../components/Illustrations';
 import { NotificationPopup } from '../../components/NotificationPopup';
@@ -331,8 +332,15 @@ interface AdminsSectionProps {
 
 function AdminsSection({ users, invitations, onInvite, onRevoke, onRefresh }: AdminsSectionProps) {
   const [generatedToken, setGeneratedToken] = useState('');
+  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const admins = users.filter((user) => user.role === 'admin');
+
+  async function copyToken() {
+    await Clipboard.setStringAsync(generatedToken);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   async function generateCode() {
     setBusy(true);
@@ -369,7 +377,17 @@ function AdminsSection({ users, invitations, onInvite, onRevoke, onRefresh }: Ad
         {generatedToken ? (
           <View style={styles.tokenBox}>
             <Text style={styles.tokenLabel}>Share this single-use code (expires in 30 minutes):</Text>
-            <Text selectable style={styles.tokenValue}>{generatedToken}</Text>
+            <View style={styles.tokenRow}>
+              <Text selectable style={styles.tokenValue}>{generatedToken}</Text>
+              <Pressable
+                accessibilityLabel={copied ? 'Copied' : 'Copy invitation code'}
+                accessibilityRole="button"
+                onPress={copyToken}
+                style={styles.copyButton}
+              >
+                {copied ? <Check size={16} color="#39765F" /> : <Copy size={16} color="#8A6224" />}
+              </Pressable>
+            </View>
             <Text style={styles.tokenHint}>The new admin copies this code, signs in (or registers), then pastes it in Profile → ‘Have an Admin invitation?’ → Accept Invitation.</Text>
           </View>
         ) : null}
@@ -495,7 +513,9 @@ const styles = StyleSheet.create({
   actionDisabled: { opacity: 0.55 },
   tokenBox: { backgroundColor: '#F6F0E3', borderRadius: 7, padding: 12, marginTop: 12 },
   tokenLabel: { color: '#8A6224', fontSize: 11, fontWeight: '700' },
-  tokenValue: { color: '#252922', fontSize: 13, fontWeight: '800', marginTop: 5, letterSpacing: 0.5 },
+  tokenRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 5, gap: 8 },
+  tokenValue: { color: '#252922', fontSize: 13, fontWeight: '800', letterSpacing: 0.5, flexShrink: 1 },
+  copyButton: { width: 32, height: 32, borderRadius: 7, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E3D9C3', alignItems: 'center', justifyContent: 'center' },
   tokenHint: { color: '#8A6224', fontSize: 10, lineHeight: 15, marginTop: 6 },
   logCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E8EAE4', borderRadius: 8, padding: 12, marginBottom: 8 },
   logAction: { color: '#252922', fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },

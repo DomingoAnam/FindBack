@@ -49,12 +49,14 @@ export async function setUserStatus(userId: string, status: 'active' | 'suspende
   if (error) throw error;
 }
 
-export async function inviteAdmin(email: string, fullName: string): Promise<string> {
-  const { data, error } = await requireClient().rpc('admin_create_invitation', {
-    p_email: email,
-    p_full_name: fullName,
-  });
-  if (error) throw error;
+export async function inviteAdmin(): Promise<string> {
+  const { data, error } = await requireClient().rpc('admin_create_invitation');
+  if (error) {
+    if (error.message.includes('admin_create_invitation')) {
+      throw new Error('Database update needed: run supabase/admin_invite_simple.sql in the Supabase SQL Editor, then try again.');
+    }
+    throw error;
+  }
   return data as string;
 }
 

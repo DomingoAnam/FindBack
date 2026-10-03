@@ -18,7 +18,7 @@ export const STATUS_LABELS: Record<ReportStatus, string> = {
   possible_match: 'Possible Match',
   under_review: 'Under Review',
   for_recovery: 'For Recovery',
-  recovered: 'Recovered',
+  recovered: 'Claimed',
   closed: 'Closed',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
@@ -47,6 +47,7 @@ export interface ItemReport {
   status: ReportStatus;
   createdAt: string;
   createdBy: string;
+  createdByName?: string;
   recoveredAt?: string | null;
   photoUris: string[];
   photoPaths?: string[];

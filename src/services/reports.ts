@@ -1,3 +1,4 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import { requireClient } from '../lib/supabase';
 import type { ClaimRequest, ItemReport, MatchRecord, NewReport, ReportContact, ReportKind, ReportStatus } from '../types/report';
 
@@ -25,7 +26,7 @@ interface ReportRow {
   created_at: string;
 }
 
-function mapReport(row: ReportRow, photoPaths: string[]): ItemReport {
+function mapReport(row: ReportRow, photoPaths: string[], creatorName?: string): ItemReport {
   return {
     id: row.id,
     code: row.report_code,
@@ -44,6 +45,7 @@ function mapReport(row: ReportRow, photoPaths: string[]): ItemReport {
     status: row.status,
     createdAt: row.created_at,
     createdBy: row.user_id,
+    createdByName: creatorName,
     recoveredAt: row.recovered_at,
     photoUris: [],
     photoPaths,
@@ -87,7 +89,17 @@ async function fetchReports(userId?: string): Promise<ItemReport[]> {
     photosByReport.set(photo.report_id, list);
   }
 
-  const reports = rows.map((row) => mapReport(row, photosByReport.get(row.id) ?? []));
+  const creatorNames = new Map<string, string>();
+  const { data: creatorRows, error: creatorsError } = await supabase
+    .rpc('get_report_creator_names', { p_report_ids: rows.map((row) => row.id) });
+  if (creatorsError) {
+    console.warn('[FindBack] get_report_creator_names failed (run supabase/creator_names.sql):', creatorsError.message);
+  }
+  for (const row of (creatorRows ?? []) as { report_id: string; full_name: string | null }[]) {
+    if (row.full_name) creatorNames.set(row.report_id, row.full_name);
+  }
+
+  const reports = rows.map((row) => mapReport(row, photosByReport.get(row.id) ?? [], creatorNames.get(row.id)));
   return attachPhotos(reports);
 }
 
@@ -109,10 +121,15 @@ async function uploadPhoto(userId: string, uri: string): Promise<string> {
   const extension = uri.match(/\.([a-z0-9]+)(?:[?#]|$)/i)?.[1]?.toLowerCase() ?? 'jpg';
   const contentType = extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg';
   const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
-  const response = await fetch(uri);
-  if (!response.ok) throw new Error('Could not read the selected image.');
-  const file = await response.arrayBuffer();
-  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, file, { contentType, upsert: false });
+
+  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  const binary = globalThis.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, bytes, { contentType, upsert: false });
   if (error) throw error;
   return path;
 }
@@ -164,6 +181,21 @@ export async function createReport(report: NewReport, userId: string): Promise<s
   }
 }
 
+export async function adminDeleteReport(report: ItemReport): Promise<void> {
+  const supabase = requireClient();
+  const { error } = await supabase.rpc('admin_delete_report', { p_report_id: report.id });
+  if (error) {
+    if (error.message.includes('admin_delete_report')) {
+      throw new Error('Database update needed: run supabase/admin_delete.sql in the Supabase SQL Editor, then try again.');
+    }
+    throw error;
+  }
+
+  if (report.photoPaths?.length) {
+    await supabase.storage.from(PHOTO_BUCKET).remove(report.photoPaths);
+  }
+}
+
 export async function deleteReport(report: ItemReport): Promise<void> {
   const supabase = requireClient();
   const { data: photoRows } = await supabase
@@ -193,7 +225,12 @@ export async function ownerUpdateReportStatus(reportId: string, status: 'recover
     p_report_id: reportId,
     p_status: status,
   });
-  if (error) throw error;
+  if (error) {
+    if (error.message.includes('owner_update_report_status')) {
+      throw new Error('Database update needed: run supabase/owner_actions.sql in the Supabase SQL Editor, then try again.');
+    }
+    throw error;
+  }
 }
 
 // ---------- Matches ----------
@@ -380,7 +417,10 @@ export async function reviewClaim(claimId: string, approve: boolean): Promise<vo
 
 export async function loadReportContact(reportId: string): Promise<ReportContact | null> {
   const { data, error } = await requireClient().rpc('get_report_contact', { p_report_id: reportId });
-  if (error) return null;
+  if (error) {
+    console.warn('[FindBack] get_report_contact failed (run supabase/contact_update.sql):', error.message);
+    return null;
+  }
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) return null;
   return {

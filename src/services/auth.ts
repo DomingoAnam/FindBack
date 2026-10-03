@@ -28,11 +28,24 @@ export function mapProfile(row: ProfileRow): UserProfile {
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
-  const { error } = await requireClient().auth.signInWithPassword({
+  const supabase = requireClient();
+  const { data, error } = await supabase.auth.signInWithPassword({
     email: email.trim().toLowerCase(),
     password,
   });
   if (error) throw error;
+
+  if (data.user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('status')
+      .eq('id', data.user.id)
+      .single();
+    if (profile?.status === 'suspended') {
+      await supabase.auth.signOut();
+      throw new Error('Your account has been disabled. Contact the FindBack office for assistance.');
+    }
+  }
 }
 
 export async function signUp(fullName: string, email: string, mobileNumber: string, password: string): Promise<boolean> {
@@ -52,11 +65,6 @@ export async function signUp(fullName: string, email: string, mobileNumber: stri
 
 export async function signOut(): Promise<void> {
   const { error } = await requireClient().auth.signOut();
-  if (error) throw error;
-}
-
-export async function sendPasswordReset(email: string): Promise<void> {
-  const { error } = await requireClient().auth.resetPasswordForEmail(email.trim().toLowerCase());
   if (error) throw error;
 }
 
@@ -110,12 +118,16 @@ export async function adminSetupAvailable(): Promise<boolean> {
   return data === true;
 }
 
+function normalizeCode(value: string): string {
+  return value.replace(/[\s​-‍﻿ ]/g, '');
+}
+
 export async function promoteToAdminWithSecret(secret: string): Promise<void> {
-  const { error } = await requireClient().rpc('promote_to_admin_with_secret', { p_secret: secret.trim() });
+  const { error } = await requireClient().rpc('promote_to_admin_with_secret', { p_secret: normalizeCode(secret) });
   if (error) throw error;
 }
 
 export async function acceptAdminInvitation(token: string): Promise<void> {
-  const { error } = await requireClient().rpc('accept_admin_invitation', { p_token: token.trim() });
+  const { error } = await requireClient().rpc('accept_admin_invitation', { p_token: normalizeCode(token) });
   if (error) throw error;
 }

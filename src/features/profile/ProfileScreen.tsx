@@ -11,6 +11,12 @@ interface ProfileScreenProps {
   onProfileChanged: () => void;
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message;
+  const message = (error as { message?: string } | null)?.message;
+  return message ?? fallback;
+}
+
 export function ProfileScreen({ profile, onSignOut, onProfileChanged }: ProfileScreenProps) {
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(profile.fullName);
@@ -72,7 +78,7 @@ export function ProfileScreen({ profile, onSignOut, onProfileChanged }: ProfileS
       Alert.alert('Welcome, Admin', 'Your administrator access is now active.');
       onProfileChanged();
     } catch (error) {
-      Alert.alert('Invitation not accepted', error instanceof Error ? error.message : 'Please check the code and try again.');
+      Alert.alert('Invitation not accepted', errorMessage(error, 'Please check the code and try again.'));
     } finally {
       setBusy(false);
     }
@@ -87,7 +93,7 @@ export function ProfileScreen({ profile, onSignOut, onProfileChanged }: ProfileS
       Alert.alert('Admin setup complete', 'You are now the FindBack administrator.');
       onProfileChanged();
     } catch (error) {
-      Alert.alert('Setup failed', error instanceof Error ? error.message : 'Please check the setup secret.');
+      Alert.alert('Setup failed', errorMessage(error, 'Please check the setup secret.'));
     } finally {
       setBusy(false);
     }
@@ -151,7 +157,7 @@ export function ProfileScreen({ profile, onSignOut, onProfileChanged }: ProfileS
           <Text style={styles.setupText}>Enter the single-use invitation code shared by an administrator.</Text>
           <FormField label="Invitation code" onChangeText={setInviteToken} value={inviteToken} autoCapitalize="none" placeholder="Paste code here" />
           <Pressable disabled={busy} onPress={redeemInvite} style={[styles.actionButton, busy && styles.actionDisabled]}>
-            <Text style={styles.actionText}>Redeem invitation</Text>
+            <Text style={styles.actionText}>Accept Invitation</Text>
           </Pressable>
         </View>
       ) : null}

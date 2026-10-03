@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { FormField } from '../../components/FormField';
-import { sendPasswordReset, signIn, signUp } from '../../services/auth';
+import { Logo } from '../../components/Logo';
+import { signIn, signUp } from '../../services/auth';
 
-type AuthMode = 'sign_in' | 'sign_up' | 'forgot';
+type AuthMode = 'sign_in' | 'sign_up';
 
 export function AuthScreen() {
   const [mode, setMode] = useState<AuthMode>('sign_in');
@@ -28,12 +29,6 @@ export function AuthScreen() {
     setNotice('');
 
     try {
-      if (mode === 'forgot') {
-        await sendPasswordReset(email);
-        setNotice('Password reset email sent. Check your inbox and follow the link.');
-        return;
-      }
-
       if (mode === 'sign_up') {
         if (!fullName.trim()) {
           setErrorMessage('Enter your full name.');
@@ -58,42 +53,43 @@ export function AuthScreen() {
 
       await signIn(email, password);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to continue. Please try again.');
+      const message = error instanceof Error ? error.message : 'Unable to continue. Please try again.';
+      if (message.includes('disabled')) {
+        Alert.alert('Account Disabled', 'Your account is disabled by the Admin. Contact the FindBack office for assistance.');
+      } else {
+        setErrorMessage(message);
+      }
     } finally {
       setBusy(false);
     }
   }
 
-  const submitDisabled = busy || !email.trim() || (mode !== 'forgot' && !password) || (mode === 'sign_up' && (!confirmPassword || !fullName.trim()));
+  const submitDisabled = busy || !email.trim() || !password || (mode === 'sign_up' && (!confirmPassword || !fullName.trim()));
 
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.brandRow}>
-        <Image source={require('../../../assets/icon.png')} style={styles.logo} />
+        <Logo size={92} />
         <Text style={styles.brand}>FINDBACK</Text>
         <Text style={styles.market}>Dalaguete Public Market</Text>
       </View>
 
       <Text style={styles.eyebrow}>LOST & FOUND</Text>
-      <Text style={styles.title}>{mode === 'sign_up' ? 'Create your account.' : mode === 'forgot' ? 'Reset password.' : 'Welcome back.'}</Text>
+      <Text style={styles.title}>{mode === 'sign_up' ? 'Create your account.' : 'Welcome back.'}</Text>
       <Text style={styles.subtitle}>
         {mode === 'sign_up'
           ? 'Join the market community to report and recover lost items.'
-          : mode === 'forgot'
-            ? 'Enter your account email and we will send you a reset link.'
-            : 'Sign in to report items, search reports, and track recoveries.'}
+          : 'Sign in to report items, search reports, and track recoveries.'}
       </Text>
 
-      {mode !== 'forgot' ? (
-        <View style={styles.modeSwitch}>
-          <Pressable onPress={() => changeMode('sign_in')} style={[styles.modeButton, mode === 'sign_in' && styles.modeSelected]}>
-            <Text style={[styles.modeText, mode === 'sign_in' && styles.modeTextSelected]}>Sign in</Text>
-          </Pressable>
-          <Pressable onPress={() => changeMode('sign_up')} style={[styles.modeButton, mode === 'sign_up' && styles.modeSelected]}>
-            <Text style={[styles.modeText, mode === 'sign_up' && styles.modeTextSelected]}>Create account</Text>
-          </Pressable>
-        </View>
-      ) : null}
+      <View style={styles.modeSwitch}>
+        <Pressable onPress={() => changeMode('sign_in')} style={[styles.modeButton, mode === 'sign_in' && styles.modeSelected]}>
+          <Text style={[styles.modeText, mode === 'sign_in' && styles.modeTextSelected]}>Sign in</Text>
+        </Pressable>
+        <Pressable onPress={() => changeMode('sign_up')} style={[styles.modeButton, mode === 'sign_up' && styles.modeSelected]}>
+          <Text style={[styles.modeText, mode === 'sign_up' && styles.modeTextSelected]}>Create account</Text>
+        </Pressable>
+      </View>
 
       {mode === 'sign_up' ? (
         <>
@@ -104,9 +100,7 @@ export function AuthScreen() {
 
       <FormField label="Email" onChangeText={setEmail} placeholder="you@example.com" value={email} autoCapitalize="none" keyboardType="email-address" />
 
-      {mode !== 'forgot' ? (
-        <FormField label="Password" onChangeText={setPassword} placeholder="Enter your password" value={password} autoCapitalize="none" secureTextEntry />
-      ) : null}
+      <FormField label="Password" onChangeText={setPassword} placeholder="Enter your password" value={password} autoCapitalize="none" secureTextEntry />
 
       {mode === 'sign_up' ? (
         <FormField label="Confirm Password" onChangeText={setConfirmPassword} placeholder="Re-enter your password" value={confirmPassword} autoCapitalize="none" secureTextEntry />
@@ -118,31 +112,19 @@ export function AuthScreen() {
       <Pressable disabled={submitDisabled} onPress={submit} style={[styles.submitButton, submitDisabled && styles.disabledButton]}>
         {busy ? <ActivityIndicator color="#FFFFFF" /> : (
           <Text style={styles.submitText}>
-            {mode === 'sign_up' ? 'Create account' : mode === 'forgot' ? 'Send reset link' : 'Sign in'}
+            {mode === 'sign_up' ? 'Create account' : 'Sign in'}
           </Text>
         )}
       </Pressable>
-
-      {mode === 'sign_in' ? (
-        <Pressable onPress={() => changeMode('forgot')} style={styles.linkButton}>
-          <Text style={styles.linkText}>Forgot your password?</Text>
-        </Pressable>
-      ) : null}
-      {mode === 'forgot' ? (
-        <Pressable onPress={() => changeMode('sign_in')} style={styles.linkButton}>
-          <Text style={styles.linkText}>Back to sign in</Text>
-        </Pressable>
-      ) : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   content: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 36, backgroundColor: '#F7F8F4' },
-  brandRow: { alignItems: 'center', gap: 10, marginBottom: 34 },
-  logo: { width: 72, height: 72, borderRadius: 20 },
-  brand: { color: '#252922', fontSize: 22, fontWeight: '900', letterSpacing: 1.6, textAlign: 'center' },
-  market: { color: '#767D72', fontSize: 13, textAlign: 'center' },
+  brandRow: { alignItems: 'center', gap: 12, marginBottom: 34 },
+  brand: { color: '#C64C32', fontSize: 28, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },
+  market: { color: '#767D72', fontSize: 14, textAlign: 'center' },
   eyebrow: { color: '#39765F', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   title: { color: '#20251F', fontSize: 30, fontWeight: '800', marginTop: 8 },
   subtitle: { color: '#697067', fontSize: 13, lineHeight: 19, marginTop: 6, marginBottom: 22 },

@@ -1,20 +1,16 @@
-import { useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AlertTriangle, BellRing, CheckCheck, Handshake, RefreshCw, Search } from 'lucide-react-native';
-import { FormField } from '../../components/FormField';
 import { ReportCard } from '../../components/ReportCard';
 import { EmptyBoxIllustration } from '../../components/Illustrations';
-import { STATUS_FLOW, STATUS_LABELS, type AppNotification, type ClaimRequest, type ItemReport, type MatchRecord, type NotificationType, type ReportStatus } from '../../types/report';
+import { OPEN_STATUSES, STATUS_FLOW, STATUS_LABELS, type AppNotification, type ItemReport, type MatchRecord, type NotificationType, type ReportStatus } from '../../types/report';
 
 interface UpdatesScreenProps {
   myReports: ItemReport[];
-  claims: ClaimRequest[];
   matches: MatchRecord[];
   notifications: AppNotification[];
   loading: boolean;
   onMarkAllRead: () => void;
   onDismissMatch: (matchId: string) => void;
-  onSubmitVerification: (reportId: string, verificationInformation: string) => Promise<boolean>;
   onOwnerAction: (report: ItemReport, action: 'recovered' | 'closed') => void;
 }
 
@@ -26,10 +22,7 @@ const notificationIcons: Record<NotificationType, typeof BellRing> = {
   admin: BellRing,
 };
 
-export function UpdatesScreen({ myReports, claims, matches, notifications, loading, onMarkAllRead, onDismissMatch, onSubmitVerification, onOwnerAction }: UpdatesScreenProps) {
-  const [claimMatch, setClaimMatch] = useState<MatchRecord | null>(null);
-  const [verification, setVerification] = useState('');
-  const [sending, setSending] = useState(false);
+export function UpdatesScreen({ myReports, matches, notifications, loading, onMarkAllRead, onDismissMatch, onOwnerAction }: UpdatesScreenProps) {
   const trackedReports = myReports.filter((report) => !['closed', 'cancelled', 'rejected'].includes(report.status));
   const unreadCount = notifications.filter((notification) => !notification.isRead).length;
 
@@ -48,23 +41,11 @@ export function UpdatesScreen({ myReports, claims, matches, notifications, loadi
     ]);
   }
 
-  async function sendVerification() {
-    if (!claimMatch || verification.trim().length < 10) return;
-    setSending(true);
-    const targetReportId = claimMatch.mineIsLost ? claimMatch.foundReportId : claimMatch.foundReportId;
-    const ok = await onSubmitVerification(targetReportId, verification);
-    setSending(false);
-    if (ok) {
-      setClaimMatch(null);
-      setVerification('');
-    }
-  }
-
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.eyebrow}>YOUR FINDBACK ACTIVITY</Text>
       <Text style={styles.title}>Updates</Text>
-      <Text style={styles.subtitle}>Review possible matches, follow your reports, and track claim requests.</Text>
+      <Text style={styles.subtitle}>Review possible matches and follow your reports.</Text>
 
       {matches.length ? (
         <>
@@ -73,11 +54,8 @@ export function UpdatesScreen({ myReports, claims, matches, notifications, loadi
             <View key={match.id} style={styles.matchCard}>
               <Text style={styles.matchTitle}>A {match.mineIsLost ? 'found' : 'lost'} report may match yours</Text>
               <Text style={styles.matchText}>‘{match.otherReportName}’ · {Math.round(match.score * 100)}% similar</Text>
-              <Text style={styles.matchHint}>Review it — matches are only confirmed after Admin verification.</Text>
+              <Text style={styles.matchHint}>Find it in Search and contact the reporter by call or Facebook to verify in person.</Text>
               <View style={styles.matchActions}>
-                <Pressable onPress={() => setClaimMatch(match)} style={[styles.matchButton, styles.matchPrimary]}>
-                  <Text style={styles.matchPrimaryText}>This may be my item</Text>
-                </Pressable>
                 <Pressable onPress={() => onDismissMatch(match.id)} style={[styles.matchButton, styles.matchSecondary]}>
                   <Text style={styles.matchSecondaryText}>Not a match</Text>
                 </Pressable>
@@ -120,14 +98,16 @@ export function UpdatesScreen({ myReports, claims, matches, notifications, loadi
         <View key={report.id} style={styles.trackedReport}>
           <StatusStepper status={report.status} />
           <ReportCard report={report} showStatus />
-          <View style={styles.ownerActions}>
-            <Pressable onPress={() => confirmOwnerAction(report, 'recovered')} style={[styles.ownerButton, styles.claimedButton]}>
-              <Text style={styles.claimedButtonText}>Claimed</Text>
-            </Pressable>
-            <Pressable onPress={() => confirmOwnerAction(report, 'closed')} style={[styles.ownerButton, styles.closeReportButton]}>
-              <Text style={styles.closeReportButtonText}>Closed</Text>
-            </Pressable>
-          </View>
+          {OPEN_STATUSES.includes(report.status) ? (
+            <View style={styles.ownerActions}>
+              <Pressable onPress={() => confirmOwnerAction(report, 'recovered')} style={[styles.ownerButton, styles.claimedButton]}>
+                <Text style={styles.claimedButtonText}>Claimed</Text>
+              </Pressable>
+              <Pressable onPress={() => confirmOwnerAction(report, 'closed')} style={[styles.ownerButton, styles.closeReportButton]}>
+                <Text style={styles.closeReportButtonText}>Closed</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       )) : (
         <View style={styles.emptyState}>
@@ -137,44 +117,6 @@ export function UpdatesScreen({ myReports, claims, matches, notifications, loadi
         </View>
       )}
 
-      <Text style={styles.sectionTitle}>My claim requests</Text>
-      {claims.length ? claims.map((claim) => (
-        <View key={claim.id} style={styles.claimCard}>
-          <Text style={[styles.claimStatus, claim.status === 'approved' ? styles.claimApproved : claim.status === 'pending' ? styles.claimPending : styles.claimRejected]}>
-            {claim.status === 'pending' ? 'Awaiting Admin review' : claim.status === 'approved' ? 'Claim approved' : 'Not approved'}
-          </Text>
-          <Text style={styles.claimItem}>{claim.reportName}</Text>
-          <Text style={styles.claimDate}>Requested {new Date(claim.createdAt).toLocaleDateString()}</Text>
-        </View>
-      )) : (
-        <Text style={styles.emptyNotice}>You have not requested any claims yet.</Text>
-      )}
-
-      <Modal animationType="slide" onRequestClose={() => setClaimMatch(null)} transparent visible={claimMatch !== null}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={styles.claimTitle}>Verify ownership</Text>
-              <Text style={styles.claimSubtitle}>
-                Describe details only the real owner would know about ‘{claimMatch?.otherReportName}’ — unique marks, contents, or proof of ownership. This stays private and is reviewed by the Admin.
-              </Text>
-              <FormField
-                label="Verification information"
-                multiline
-                onChangeText={setVerification}
-                placeholder="e.g. The wallet has a small tear on the left corner and contains a school ID..."
-                value={verification}
-              />
-              <Pressable disabled={sending || verification.trim().length < 10} onPress={sendVerification} style={[styles.submitButton, (sending || verification.trim().length < 10) && styles.submitDisabled]}>
-                <Text style={styles.submitText}>{sending ? 'Submitting...' : 'Submit verification'}</Text>
-              </Pressable>
-              <Pressable onPress={() => setClaimMatch(null)} style={styles.cancelButton}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </Pressable>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 }

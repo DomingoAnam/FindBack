@@ -2,16 +2,18 @@ import { useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CheckCircle2 } from 'lucide-react-native';
 import { ContactCard } from '../../components/ContactCard';
+import { OwnerContactCard } from '../../components/OwnerContactCard';
 import { FormField } from '../../components/FormField';
 import { PhotoPicker } from '../../components/PhotoPicker';
-import { REPORT_CATEGORIES, type ContactSettings, type NewReport, type ReportKind } from '../../types/report';
+import { REPORT_CATEGORIES, type ContactSettings, type NewReport, type ReportContact, type ReportKind } from '../../types/report';
 
 interface ReportFormScreenProps {
   settings: ContactSettings | null;
+  ownerContact?: ReportContact | null;
   onSubmit: (report: NewReport) => Promise<string>;
 }
 
-export function ReportFormScreen({ settings, onSubmit }: ReportFormScreenProps) {
+export function ReportFormScreen({ settings, ownerContact, onSubmit }: ReportFormScreenProps) {
   const [kind, setKind] = useState<ReportKind>('lost');
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
@@ -36,6 +38,7 @@ export function ReportFormScreen({ settings, onSubmit }: ReportFormScreenProps) 
     if (!category) return 'Choose a category.';
     if (!description.trim()) return 'Describe the item.';
     if (!occurredDate.trim()) return `Enter the date it was ${kind}.`;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(occurredDate.trim())) return 'Enter the date in this format: YYYY-MM-DD (e.g. 2026-10-03).';
     if (!occurredTime.trim()) return `Enter the approximate time it was ${kind}.`;
     if (!location.trim()) return `Enter where it was ${kind}.`;
     return null;
@@ -87,7 +90,11 @@ export function ReportFormScreen({ settings, onSubmit }: ReportFormScreenProps) 
       resetForm();
       setSubmittedCode(code);
     } catch (error) {
-      Alert.alert('Report not published', error instanceof Error ? error.message : 'Please try again.');
+      console.warn('[FindBack] createReport failed:', error);
+      const message = error instanceof Error
+        ? error.message
+        : (error as { message?: string } | null)?.message ?? 'Please try again.';
+      Alert.alert('Report not published', message);
     } finally {
       setSubmitting(false);
     }
@@ -106,9 +113,6 @@ export function ReportFormScreen({ settings, onSubmit }: ReportFormScreenProps) 
           <Text style={styles.successStatus}>Reported</Text>
         </View>
         <Text style={styles.successNote}>You will receive a notification if a possible match is identified.</Text>
-        <Pressable onPress={() => setSubmittedCode(null)} style={styles.submitButton}>
-          <Text style={styles.submitText}>Create another report</Text>
-        </Pressable>
       </View>
     );
   }
@@ -158,11 +162,18 @@ export function ReportFormScreen({ settings, onSubmit }: ReportFormScreenProps) 
       <Text style={styles.sectionLabel}>PHOTOS</Text>
       <PhotoPicker photoUris={photoUris} onChange={setPhotoUris} />
 
-      {settings ? (
+      <Text style={styles.sectionLabel}>RECOVERY INFORMATION</Text>
+      {ownerContact && ownerContact.role !== 'admin' ? (
         <>
-          <Text style={styles.sectionLabel}>RECOVERY INFORMATION</Text>
-          <ContactCard settings={settings} title={kind === 'lost' ? 'WHERE CAN I PICK UP OR CONTACT US?' : 'WHERE CAN THE OWNER CLAIM THE ITEM?'} />
+          <OwnerContactCard contact={ownerContact} kind={kind} heading="YOUR CONTACT INFORMATION" />
+          {!ownerContact.mobileNumber.trim() && !ownerContact.facebookUrl.trim() ? (
+            <Text style={styles.contactHint}>Add your mobile number and Facebook URL in Profile → Edit profile so other users can reach you about this report.</Text>
+          ) : (
+            <Text style={styles.contactHint}>This is the number and Facebook page other users will see on your report.</Text>
+          )}
         </>
+      ) : settings ? (
+        <ContactCard settings={settings} title={kind === 'lost' ? 'WHERE CAN I PICK UP OR CONTACT US?' : 'WHERE CAN THE OWNER CLAIM THE ITEM?'} />
       ) : null}
 
       <Pressable disabled={submitting || !requiredFilled} onPress={requestSubmit} style={[styles.submitButton, (submitting || !requiredFilled) && styles.disabledButton]}>
@@ -200,6 +211,7 @@ const styles = StyleSheet.create({
   kindText: { color: '#687066', fontSize: 12, fontWeight: '600' },
   selectedKindText: { color: '#30372E' },
   sectionLabel: { color: '#39765F', fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 12, marginTop: 6 },
+  contactHint: { color: '#858B82', fontSize: 11, lineHeight: 16, marginTop: -6, marginBottom: 16 },
   label: { color: '#343A32', fontSize: 12, fontWeight: '700', marginBottom: 6 },
   categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 14 },
   categoryChip: { borderWidth: 1, borderColor: '#DDE1D9', borderRadius: 7, paddingHorizontal: 11, paddingVertical: 7, backgroundColor: '#FFFFFF' },

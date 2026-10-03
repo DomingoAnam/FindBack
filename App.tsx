@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { Logo } from './src/components/Logo';
 import { AdminDashboard } from './src/features/admin/AdminDashboard';
 import { AuthScreen } from './src/features/auth/AuthScreen';
 import { UserDashboard } from './src/features/users/UserDashboard';
@@ -93,7 +94,10 @@ export default function App() {
           </View>
         ) : authLoading || (session && profileLoading) ? (
           <View style={styles.loading}>
-            <ActivityIndicator color="#C64C32" />
+            <Logo size={96} />
+            <Text style={styles.brand}>FINDBACK</Text>
+            <Text style={styles.market}>Dalaguete Public Market</Text>
+            <ActivityIndicator color="#C64C32" style={styles.spinner} />
             <Text style={styles.loadingText}>Connecting to FindBack...</Text>
           </View>
         ) : !session ? (
@@ -126,7 +130,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F7F8F4',
   },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, gap: 12 },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, gap: 10 },
+  brand: { color: '#C64C32', fontSize: 26, fontWeight: '900', letterSpacing: 2, marginTop: 6 },
+  market: { color: '#767D72', fontSize: 13 },
+  spinner: { marginTop: 14 },
   loadingText: { color: '#697067', fontSize: 12 },
   errorTitle: { color: '#252922', fontSize: 17, fontWeight: '800', textAlign: 'center' },
   errorText: { color: '#697067', fontSize: 12, lineHeight: 18, textAlign: 'center' },

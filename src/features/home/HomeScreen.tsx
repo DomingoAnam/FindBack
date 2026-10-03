@@ -74,7 +74,7 @@ export function HomeScreen({ reports, myReports, notifications, firstName, onNav
           <Text style={styles.link}>See all</Text>
         </Pressable>
       </View>
-      {reports.slice(0, 3).map((report) => <ReportCard key={report.id} report={report} />)}
+      {reports.slice(0, 3).map((report) => <ReportCard key={report.id} report={report} showStatus />)}
       {!reports.length ? <Text style={styles.empty}>No community reports yet. Be the first to help.</Text> : null}
     </ScrollView>
   );

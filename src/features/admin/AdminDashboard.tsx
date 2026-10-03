@@ -1,29 +1,28 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { FileText, GitCompareArrows, Handshake, LayoutDashboard, LogOut, Phone, Plus, ScrollText, ShieldCheck, Users } from 'lucide-react-native';
+import { Archive, CheckCircle2, FileText, GitCompareArrows, LayoutDashboard, LogOut, Package, Phone, Plus, ScrollText, SearchX, ShieldCheck, Users } from 'lucide-react-native';
 import { RoleHeader } from '../../components/RoleHeader';
+import { HeroIllustration } from '../../components/Illustrations';
+import { NotificationPopup } from '../../components/NotificationPopup';
 import { ReportCard } from '../../components/ReportCard';
 import { FormField } from '../../components/FormField';
 import { StatusBadge } from '../../components/StatusBadge';
 import { supabase } from '../../lib/supabase';
 import { inviteAdmin, loadAdminStats, loadAuditLogs, loadInvitations, loadUsers, revokeInvitation, setUserStatus } from '../../services/admin';
-import { confirmMatch, createReport, dismissMatch, loadAllReports, loadPendingClaims, loadPendingMatches, reviewClaim, updateReportStatus } from '../../services/reports';
+import { adminDeleteReport, createReport, loadAllReports, updateReportStatus } from '../../services/reports';
 import { loadContactSettings, updateContactSettings } from '../../services/settings';
 import { ReportFormScreen } from '../reports/ReportFormScreen';
-import { OPEN_STATUSES, STATUS_LABELS, type AdminInvitation, type AdminStats, type AuditLog, type ClaimRequest, type ContactSettings, type ItemReport, type MatchRecord, type NewReport, type ReportStatus, type UserProfile } from '../../types/report';
+import { OPEN_STATUSES, STATUS_LABELS, type AdminInvitation, type AdminStats, type AuditLog, type ContactSettings, type ItemReport, type NewReport, type ReportStatus, type UserProfile } from '../../types/report';
 
-type AdminSection = 'dashboard' | 'reports' | 'matches' | 'claims' | 'users' | 'admins' | 'contact' | 'logs' | 'create';
+type AdminSection = 'dashboard' | 'reports' | 'create' | 'users' | 'admins' | 'contact' | 'logs';
 
-const SECTIONS: { key: AdminSection; label: string }[] = [
-  { key: 'dashboard', label: 'Dashboard' },
+const SECTIONS: { key: Exclude<AdminSection, 'create'>; label: string }[] = [
+  { key: 'dashboard', label: 'Home' },
   { key: 'reports', label: 'Reports' },
-  { key: 'matches', label: 'Matches' },
-  { key: 'claims', label: 'Claims' },
   { key: 'users', label: 'Users' },
   { key: 'admins', label: 'Admins' },
   { key: 'contact', label: 'Contact' },
   { key: 'logs', label: 'Audit Logs' },
-  { key: 'create', label: 'Add Report' },
 ];
 
 interface AdminDashboardProps {
@@ -35,30 +34,26 @@ export function AdminDashboard({ profile, onSignOut }: AdminDashboardProps) {
   const [section, setSection] = useState<AdminSection>('dashboard');
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [reports, setReports] = useState<ItemReport[]>([]);
-  const [matches, setMatches] = useState<MatchRecord[]>([]);
-  const [claims, setClaims] = useState<ClaimRequest[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [invitations, setInvitations] = useState<AdminInvitation[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [settings, setSettings] = useState<ContactSettings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [formKey, setFormKey] = useState(0);
+  const [popup, setPopup] = useState<{ id: number; title: string; message: string } | null>(null);
 
   const refresh = useCallback(async () => {
     const results = await Promise.allSettled([
       loadAdminStats(),
       loadAllReports(),
-      loadPendingMatches(),
-      loadPendingClaims(),
       loadUsers(),
       loadInvitations(),
       loadAuditLogs(),
       loadContactSettings(),
     ]);
-    const [statsR, reportsR, matchesR, claimsR, usersR, invitationsR, logsR, settingsR] = results;
+    const [statsR, reportsR, usersR, invitationsR, logsR, settingsR] = results;
     if (statsR.status === 'fulfilled') setStats(statsR.value);
     if (reportsR.status === 'fulfilled') setReports(reportsR.value);
-    if (matchesR.status === 'fulfilled') setMatches(matchesR.value);
-    if (claimsR.status === 'fulfilled') setClaims(claimsR.value);
     if (usersR.status === 'fulfilled') setUsers(usersR.value);
     if (invitationsR.status === 'fulfilled') setInvitations(invitationsR.value);
     if (logsR.status === 'fulfilled') setLogs(logsR.value);
@@ -83,12 +78,17 @@ export function AdminDashboard({ profile, onSignOut }: AdminDashboardProps) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, () => { void refresh(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'claims' }, () => { void refresh(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => { void refresh(); })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${profile.id}` }, (payload) => {
+        const row = payload.new as { title?: string; message?: string };
+        setPopup({ id: Date.now(), title: row.title ?? 'FindBack update', message: row.message ?? '' });
+        void refresh();
+      })
       .subscribe();
     return () => {
       mounted = false;
       void supabaseClient.removeChannel(channel);
     };
-  }, [refresh]);
+  }, [refresh, profile.id]);
 
   function run(action: () => Promise<void>, successMessage: string) {
     void action()
@@ -101,6 +101,17 @@ export function AdminDashboard({ profile, onSignOut }: AdminDashboardProps) {
 
   function changeStatus(report: ItemReport, status: ReportStatus) {
     run(() => updateReportStatus(report.id, status), `${report.code} is now ${STATUS_LABELS[status]}.`);
+  }
+
+  function confirmDelete(report: ItemReport) {
+    Alert.alert(
+      'Delete report?',
+      `Remove ${report.code} (${report.name}) permanently? Use this for false reports or reports not related to lost and found. This is recorded in the audit log.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => run(() => adminDeleteReport(report), `${report.code} was deleted.`) },
+      ],
+    );
   }
 
   async function submitReport(report: NewReport) {
@@ -120,18 +131,25 @@ export function AdminDashboard({ profile, onSignOut }: AdminDashboardProps) {
 
         {!loading && section === 'dashboard' && stats ? (
           <>
-            <Text style={styles.title}>Admin Dashboard</Text>
-            <Text style={styles.subtitle}>Welcome, {profile.fullName || 'Admin'}. Market lost-and-found at a glance.</Text>
-            <View style={styles.statsGrid}>
-              <StatCard label="Total Users" value={stats.totalUsers} />
-              <StatCard label="Total Reports" value={stats.totalReports} />
-              <StatCard label="Lost Items" value={stats.lostItems} />
-              <StatCard label="Found Items" value={stats.foundItems} />
-              <StatCard label="Possible Matches" value={stats.possibleMatches} highlight={stats.possibleMatches > 0} />
-              <StatCard label="Pending Claims" value={stats.pendingClaims} highlight={stats.pendingClaims > 0} />
-              <StatCard label="Recovered" value={stats.recoveredItems} />
-              <StatCard label="Closed" value={stats.closedReports} />
+            <View style={styles.hero}>
+              <View style={styles.heroText}>
+                <Text style={styles.heroEyebrow}>ADMIN HOME</Text>
+                <Text style={styles.heroTitle}>Welcome back,{'\n'}{profile.fullName.split(' ')[0] || 'Admin'}!</Text>
+                <Text style={styles.heroSubtitle}>Here is what is happening at the market today.</Text>
+              </View>
+              <HeroIllustration width={112} height={90} />
             </View>
+
+            <View style={styles.statsGrid}>
+              <StatCard icon={Users} label="Total Users" value={stats.totalUsers} accent="#39765F" />
+              <StatCard icon={FileText} label="Total Reports" value={stats.totalReports} accent="#30372E" />
+              <StatCard icon={SearchX} label="Lost Items" value={stats.lostItems} accent="#B44732" />
+              <StatCard icon={Package} label="Found Items" value={stats.foundItems} accent="#39765F" />
+              <StatCard icon={GitCompareArrows} label="Possible Matches" value={stats.possibleMatches} accent="#C64C32" highlight={stats.possibleMatches > 0} />
+              <StatCard icon={CheckCircle2} label="Claimed" value={stats.recoveredItems} accent="#2C5C4A" />
+              <StatCard icon={Archive} label="Closed" value={stats.closedReports} accent="#777D74" />
+            </View>
+
           </>
         ) : null}
 
@@ -145,52 +163,15 @@ export function AdminDashboard({ profile, onSignOut }: AdminDashboardProps) {
                   <Text style={styles.cardCode}>{report.code}</Text>
                 </View>
                 <ReportCard report={report} />
-                {OPEN_STATUSES.includes(report.status) ? (
-                  <View style={styles.actionRow}>
+                <View style={styles.actionRow}>
+                  {OPEN_STATUSES.includes(report.status) ? (
                     <ActionButton label="Claimed" onPress={() => changeStatus(report, 'recovered')} kind="primary" />
-                    <ActionButton label="Close" onPress={() => changeStatus(report, 'closed')} kind="danger" />
-                  </View>
-                ) : null}
+                  ) : null}
+                  <ActionButton label="Delete" onPress={() => confirmDelete(report)} kind="danger" />
+                </View>
               </View>
             ))}
             {!openReports.length ? <Text style={styles.empty}>No open reports.</Text> : null}
-          </>
-        ) : null}
-
-        {!loading && section === 'matches' ? (
-          <>
-            <Text style={styles.title}>Possible Matches ({matches.length})</Text>
-            {matches.map((match) => (
-              <View key={match.id} style={styles.card}>
-                <Text style={styles.matchNames}>{match.lostReportName} ↔ {match.foundReportName}</Text>
-                <Text style={styles.muted}>{Math.round(match.score * 100)}% similar · {new Date(match.createdAt).toLocaleDateString()}</Text>
-                <View style={styles.actionRow}>
-                  <ActionButton label="Confirm match" onPress={() => run(() => confirmMatch(match.id), 'Match confirmed. Reports are now For recovery.')} kind="primary" />
-                  <ActionButton label="Dismiss" onPress={() => run(() => dismissMatch(match.id), '')} kind="danger" />
-                </View>
-              </View>
-            ))}
-            {!matches.length ? <Text style={styles.empty}>No pending matches.</Text> : null}
-          </>
-        ) : null}
-
-        {!loading && section === 'claims' ? (
-          <>
-            <Text style={styles.title}>Claim Requests ({claims.length})</Text>
-            {claims.map((claim) => (
-              <View key={claim.id} style={styles.card}>
-                <Text style={styles.claimant}>{claim.claimantName} claims an item</Text>
-                <Text style={styles.claimTitle}>{claim.reportName} · {claim.reportKind?.toUpperCase()}</Text>
-                <Text style={styles.muted}>{new Date(claim.createdAt).toLocaleString()}</Text>
-                <Text style={styles.verificationLabel}>Private verification information</Text>
-                <Text style={styles.verificationText}>{claim.verificationInformation || '(none provided)'}</Text>
-                <View style={styles.actionRow}>
-                  <ActionButton label="Approve & recover" onPress={() => run(() => reviewClaim(claim.id, true), 'Claim approved. The report is marked Recovered.')} kind="primary" />
-                  <ActionButton label="Reject" onPress={() => run(() => reviewClaim(claim.id, false), '')} kind="danger" />
-                </View>
-              </View>
-            ))}
-            {!claims.length ? <Text style={styles.empty}>No pending claim requests.</Text> : null}
           </>
         ) : null}
 
@@ -209,9 +190,9 @@ export function AdminDashboard({ profile, onSignOut }: AdminDashboardProps) {
                 {user.id !== profile.id ? (
                   <View style={styles.actionRow}>
                     {user.status === 'active' ? (
-                      <ActionButton label="Suspend" onPress={() => run(() => setUserStatus(user.id, 'suspended'), `${user.fullName || user.email} suspended.`)} kind="danger" />
+                      <ActionButton label="Disable" onPress={() => run(() => setUserStatus(user.id, 'suspended'), `${user.fullName || user.email} disabled. They can no longer sign in.`)} kind="danger" />
                     ) : (
-                      <ActionButton label="Reactivate" onPress={() => run(() => setUserStatus(user.id, 'active'), `${user.fullName || user.email} reactivated.`)} kind="primary" />
+                      <ActionButton label="Enable" onPress={() => run(() => setUserStatus(user.id, 'active'), `${user.fullName || user.email} enabled. They can sign in again.`)} kind="primary" />
                     )}
                   </View>
                 ) : null}
@@ -224,7 +205,7 @@ export function AdminDashboard({ profile, onSignOut }: AdminDashboardProps) {
           <AdminsSection
             users={users}
             invitations={invitations}
-            onInvite={(email, name) => inviteAdmin(email, name)}
+            onInvite={() => inviteAdmin()}
             onRevoke={(id) => run(() => revokeInvitation(id), 'Invitation revoked.')}
             onRefresh={refresh}
           />
@@ -235,7 +216,7 @@ export function AdminDashboard({ profile, onSignOut }: AdminDashboardProps) {
         ) : null}
 
         {!loading && section === 'create' ? (
-          <ReportFormScreen settings={settings} onSubmit={submitReport} />
+          <ReportFormScreen key={formKey} settings={settings} onSubmit={submitReport} />
         ) : null}
 
         {!loading && section === 'logs' ? (
@@ -253,6 +234,18 @@ export function AdminDashboard({ profile, onSignOut }: AdminDashboardProps) {
         ) : null}
       </ScrollView>
 
+      <Pressable
+        accessibilityLabel="Add report"
+        accessibilityRole="button"
+        onPress={() => {
+          setFormKey((key) => key + 1);
+          setSection('create');
+        }}
+        style={styles.fab}
+      >
+        <Plus size={26} color="#FFFFFF" strokeWidth={2.5} />
+      </Pressable>
+
       <View style={styles.navbar}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.navbarContent}>
           {SECTIONS.map((item) => {
@@ -267,8 +260,8 @@ export function AdminDashboard({ profile, onSignOut }: AdminDashboardProps) {
                 onPress={() => setSection(item.key)}
                 style={styles.navTab}
               >
-                <View style={[styles.navIconWrap, item.key === 'create' && styles.navCreateButton]}>
-                  <Icon size={18} color={item.key === 'create' ? '#FFFFFF' : isActive ? '#C64C32' : '#72796F'} strokeWidth={2} />
+                <View style={styles.navIconWrap}>
+                  <Icon size={18} color={isActive ? '#C64C32' : '#72796F'} strokeWidth={2} />
                 </View>
                 <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>{item.label}</Text>
               </Pressable>
@@ -282,26 +275,39 @@ export function AdminDashboard({ profile, onSignOut }: AdminDashboardProps) {
           </Pressable>
         </ScrollView>
       </View>
+
+      {popup ? (
+        <NotificationPopup
+          key={popup.id}
+          title={popup.title}
+          message={popup.message}
+          onClose={() => setPopup(null)}
+          onPress={() => {
+            setPopup(null);
+            setSection('reports');
+          }}
+        />
+      ) : null}
     </View>
   );
 }
 
-const SECTION_ICONS: Record<AdminSection, typeof LayoutDashboard> = {
+const SECTION_ICONS: Record<Exclude<AdminSection, 'create'>, typeof LayoutDashboard> = {
   dashboard: LayoutDashboard,
   reports: FileText,
-  matches: GitCompareArrows,
-  claims: Handshake,
   users: Users,
   admins: ShieldCheck,
   contact: Phone,
   logs: ScrollText,
-  create: Plus,
 };
 
-function StatCard({ label, value, highlight = false }: { label: string; value: number; highlight?: boolean }) {
+function StatCard({ icon: Icon, label, value, accent, highlight = false }: { icon: typeof Users; label: string; value: number; accent: string; highlight?: boolean }) {
   return (
     <View style={[styles.statCard, highlight && styles.statCardHighlight]}>
-      <Text style={[styles.statValue, highlight && styles.statValueHighlight]}>{value}</Text>
+      <View style={[styles.statIconWrap, { backgroundColor: `${accent}1A` }]}>
+        <Icon size={16} color={accent} />
+      </View>
+      <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
@@ -318,32 +324,27 @@ function ActionButton({ label, onPress, kind }: { label: string; onPress: () => 
 interface AdminsSectionProps {
   users: UserProfile[];
   invitations: AdminInvitation[];
-  onInvite: (email: string, fullName: string) => Promise<string>;
+  onInvite: () => Promise<string>;
   onRevoke: (invitationId: string) => void;
   onRefresh: () => Promise<void>;
 }
 
 function AdminsSection({ users, invitations, onInvite, onRevoke, onRefresh }: AdminsSectionProps) {
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
   const [generatedToken, setGeneratedToken] = useState('');
   const [busy, setBusy] = useState(false);
   const admins = users.filter((user) => user.role === 'admin');
 
-  async function sendInvite() {
-    if (!email.trim() || !name.trim()) {
-      Alert.alert('Complete the invitation', 'Enter the name and email of the new administrator.');
-      return;
-    }
+  async function generateCode() {
     setBusy(true);
     try {
-      const token = await onInvite(email.trim(), name.trim());
+      const token = await onInvite();
       setGeneratedToken(token);
-      setEmail('');
-      setName('');
       await onRefresh();
     } catch (error) {
-      Alert.alert('Invitation failed', error instanceof Error ? error.message : 'Please try again.');
+      const message = error instanceof Error
+        ? error.message
+        : (error as { message?: string } | null)?.message ?? 'Please try again.';
+      Alert.alert('Could not generate code', message);
     } finally {
       setBusy(false);
     }
@@ -361,16 +362,15 @@ function AdminsSection({ users, invitations, onInvite, onRevoke, onRefresh }: Ad
 
       <Text style={styles.sectionLabel}>INVITE ADMINISTRATOR</Text>
       <View style={styles.card}>
-        <FormField label="Full name" onChangeText={setName} value={name} placeholder="New admin's name" />
-        <FormField label="Email" onChangeText={setEmail} value={email} placeholder="admin@example.com" autoCapitalize="none" keyboardType="email-address" />
-        <Pressable disabled={busy} onPress={sendInvite} style={[styles.inviteButton, busy && styles.actionDisabled]}>
-          <Text style={styles.inviteButtonText}>{busy ? 'Creating...' : 'Create invitation'}</Text>
+        <Text style={styles.generateText}>Generate code to add Admin Accounts.</Text>
+        <Pressable disabled={busy} onPress={generateCode} style={[styles.inviteButton, busy && styles.actionDisabled]}>
+          <Text style={styles.inviteButtonText}>{busy ? 'Generating...' : 'Generate code'}</Text>
         </Pressable>
         {generatedToken ? (
           <View style={styles.tokenBox}>
             <Text style={styles.tokenLabel}>Share this single-use code (expires in 30 minutes):</Text>
             <Text selectable style={styles.tokenValue}>{generatedToken}</Text>
-            <Text style={styles.tokenHint}>The invited admin signs in (or registers with this email), then redeems the code in Profile → ‘Have an Admin invitation?’</Text>
+            <Text style={styles.tokenHint}>The new admin copies this code, signs in (or registers), then pastes it in Profile → ‘Have an Admin invitation?’ → Accept Invitation.</Text>
           </View>
         ) : null}
       </View>
@@ -381,10 +381,10 @@ function AdminsSection({ users, invitations, onInvite, onRevoke, onRefresh }: Ad
         return (
           <View key={invitation.id} style={styles.card}>
             <View style={styles.cardHeader}>
-              <Text style={styles.userName}>{invitation.fullName || invitation.email}</Text>
+              <Text style={styles.userName}>Invitation code</Text>
               <Text style={[styles.userStatus, state !== 'Pending' && styles.userSuspended]}>{state.toUpperCase()}</Text>
             </View>
-            <Text style={styles.muted}>{invitation.email} · expires {new Date(invitation.expiresAt).toLocaleString()}</Text>
+            <Text style={styles.muted}>Expires {new Date(invitation.expiresAt).toLocaleString()}</Text>
             {state === 'Pending' ? (
               <View style={styles.actionRow}>
                 <ActionButton label="Revoke" onPress={() => onRevoke(invitation.id)} kind="danger" />
@@ -431,11 +431,27 @@ function ContactSection({ settings, onSave }: { settings: ContactSettings; onSav
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F7F8F4' },
+  fab: {
+    position: 'absolute',
+    right: 18,
+    bottom: 76,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#C64C32',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#20251F',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    zIndex: 10,
+  },
   navbar: { borderTopWidth: 1, borderTopColor: '#E5E8E1', backgroundColor: '#FFFFFF', paddingTop: 10, paddingBottom: 8 },
   navbarContent: { gap: 4, paddingHorizontal: 12, alignItems: 'center' },
   navTab: { minWidth: 62, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   navIconWrap: { width: 30, height: 27, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
-  navCreateButton: { borderRadius: 7, backgroundColor: '#C64C32' },
   navLabel: { color: '#72796F', fontSize: 10, fontWeight: '600' },
   navLabelActive: { color: '#C64C32' },
   navLogoutLabel: { color: '#B44732', fontSize: 10, fontWeight: '600' },
@@ -443,11 +459,16 @@ const styles = StyleSheet.create({
   title: { color: '#20251F', fontSize: 22, fontWeight: '800', marginBottom: 4, marginTop: 6 },
   subtitle: { color: '#697067', fontSize: 12, lineHeight: 18, marginBottom: 14 },
   sectionLabel: { color: '#39765F', fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginTop: 14, marginBottom: 10 },
+  hero: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#E9EFE7', borderRadius: 12, padding: 18, marginBottom: 14 },
+  heroText: { flex: 1, paddingRight: 8 },
+  heroEyebrow: { color: '#39765F', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  heroTitle: { color: '#20251F', fontSize: 22, lineHeight: 27, fontWeight: '800', marginTop: 6 },
+  heroSubtitle: { color: '#596258', fontSize: 12, lineHeight: 17, marginTop: 6 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
-  statCard: { width: '48%', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E8EAE4', borderRadius: 10, padding: 15 },
+  statCard: { width: '48%', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E8EAE4', borderRadius: 10, padding: 14 },
   statCardHighlight: { borderColor: '#E4C7C0', backgroundColor: '#FBEEE8' },
+  statIconWrap: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 9 },
   statValue: { color: '#252922', fontSize: 24, fontWeight: '800' },
-  statValueHighlight: { color: '#B44732' },
   statLabel: { color: '#777D74', fontSize: 11, marginTop: 3 },
   card: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E8EAE4', borderRadius: 10, padding: 14, marginBottom: 11 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
@@ -468,7 +489,8 @@ const styles = StyleSheet.create({
   userName: { color: '#252922', fontSize: 14, fontWeight: '700' },
   userStatus: { color: '#39765F', fontSize: 10, fontWeight: '800' },
   userSuspended: { color: '#B44732' },
-  inviteButton: { alignItems: 'center', backgroundColor: '#C64C32', borderRadius: 7, paddingVertical: 12, marginTop: 4 },
+  inviteButton: { alignItems: 'center', backgroundColor: '#C64C32', borderRadius: 7, paddingVertical: 12, marginTop: 10 },
+  generateText: { color: '#596258', fontSize: 12, lineHeight: 17 },
   inviteButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   actionDisabled: { opacity: 0.55 },
   tokenBox: { backgroundColor: '#F6F0E3', borderRadius: 7, padding: 12, marginTop: 12 },

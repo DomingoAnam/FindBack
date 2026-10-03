@@ -5,16 +5,24 @@ import type { ReportContact, ReportKind } from '../types/report';
 interface OwnerContactCardProps {
   contact: ReportContact;
   kind: ReportKind;
+  heading?: string;
 }
 
-export function OwnerContactCard({ contact, kind }: OwnerContactCardProps) {
+function normalizeUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return trimmed;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+export function OwnerContactCard({ contact, kind, heading }: OwnerContactCardProps) {
   const phoneLink = `tel:${contact.mobileNumber.replace(/[^+\d]/g, '')}`;
+  const facebookLink = normalizeUrl(contact.facebookUrl);
   const hasPhone = Boolean(contact.mobileNumber.trim());
-  const hasFacebook = Boolean(contact.facebookUrl.trim());
+  const hasFacebook = Boolean(facebookLink);
 
   return (
     <View style={styles.card}>
-      <Text style={styles.heading}>{kind === 'found' ? 'CONTACT THE PERSON WHO FOUND IT' : 'CONTACT THE OWNER'}</Text>
+      <Text style={styles.heading}>{heading ?? (kind === 'found' ? 'CONTACT THE PERSON WHO FOUND IT' : 'CONTACT THE OWNER')}</Text>
 
       <View style={styles.row}>
         <UserRound size={15} color="#39765F" />
@@ -25,24 +33,29 @@ export function OwnerContactCard({ contact, kind }: OwnerContactCardProps) {
         </View>
       </View>
 
-      {hasPhone || hasFacebook ? (
-        <View style={styles.actions}>
-          {hasPhone ? (
-            <Pressable accessibilityRole="button" onPress={() => { void Linking.openURL(phoneLink); }} style={[styles.button, styles.callButton]}>
-              <Phone size={14} color="#FFFFFF" />
-              <Text style={styles.callText}>Call Us</Text>
-            </Pressable>
-          ) : null}
-          {hasFacebook ? (
-            <Pressable accessibilityRole="button" onPress={() => { void Linking.openURL(contact.facebookUrl); }} style={[styles.button, styles.facebookButton]}>
-              <Globe size={14} color="#39765F" />
-              <Text style={styles.facebookText}>Visit Facebook Page</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : (
+      <View style={styles.actions}>
+        <Pressable
+          accessibilityRole="button"
+          disabled={!hasPhone}
+          onPress={() => { void Linking.openURL(phoneLink); }}
+          style={[styles.button, styles.callButton, !hasPhone && styles.buttonDisabled]}
+        >
+          <Phone size={14} color="#FFFFFF" />
+          <Text style={styles.callText}>Call Us</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          disabled={!hasFacebook}
+          onPress={() => { void Linking.openURL(facebookLink); }}
+          style={[styles.button, styles.facebookButton, !hasFacebook && styles.buttonDisabled]}
+        >
+          <Globe size={14} color={hasFacebook ? '#39765F' : '#9AA096'} />
+          <Text style={[styles.facebookText, !hasFacebook && styles.facebookTextDisabled]}>Visit Facebook Page</Text>
+        </Pressable>
+      </View>
+      {!hasPhone && !hasFacebook ? (
         <Text style={styles.emptyNote}>This user has not shared contact details yet. Use the official recovery contact below.</Text>
-      )}
+      ) : null}
     </View>
   );
 }
@@ -61,5 +74,7 @@ const styles = StyleSheet.create({
   callText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   facebookButton: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#C9D4C6' },
   facebookText: { color: '#39765F', fontSize: 12, fontWeight: '700' },
+  facebookTextDisabled: { color: '#9AA096' },
+  buttonDisabled: { opacity: 0.5 },
   emptyNote: { color: '#8A5A4E', fontSize: 11, lineHeight: 16 },
 });

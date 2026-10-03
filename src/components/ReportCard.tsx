@@ -54,7 +54,10 @@ export function ReportCard({ report, showStatus = false }: ReportCardProps) {
         <Text style={styles.meta}>{report.location}</Text>
         <Text style={styles.meta}>{report.occurredDate} {report.occurredTime}</Text>
       </View>
-      <Text style={styles.code}>{report.code}</Text>
+      <View style={styles.footerRow}>
+        <Text style={styles.code}>{report.code}</Text>
+        {report.createdByName ? <Text style={styles.creator}>Reported by {report.createdByName}</Text> : null}
+      </View>
     </View>
   );
 }
@@ -76,5 +79,7 @@ const styles = StyleSheet.create({
   description: { color: '#656C63', fontSize: 13, lineHeight: 19, marginBottom: 12 },
   bottomRow: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 },
   meta: { color: '#777D74', fontSize: 11 },
-  code: { color: '#AAB4A8', fontSize: 9, fontWeight: '700', marginTop: 8, letterSpacing: 0.5 },
+  footerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, gap: 8 },
+  code: { color: '#AAB4A8', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  creator: { color: '#39765F', fontSize: 10, fontWeight: '700', flexShrink: 1, textAlign: 'right' },
 });

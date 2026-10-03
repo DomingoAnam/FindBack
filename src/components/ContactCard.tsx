@@ -7,8 +7,15 @@ interface ContactCardProps {
   title?: string;
 }
 
+function normalizeUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return trimmed;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 export function ContactCard({ settings, title = 'WHERE CAN I PICK UP THE ITEM?' }: ContactCardProps) {
   const phoneLink = `tel:${settings.phoneNumber.replace(/[^+\d]/g, '')}`;
+  const facebookLink = normalizeUrl(settings.facebookPageUrl);
 
   return (
     <View style={styles.card}>
@@ -41,7 +48,7 @@ export function ContactCard({ settings, title = 'WHERE CAN I PICK UP THE ITEM?' 
           <Phone size={14} color="#FFFFFF" />
           <Text style={styles.callText}>Call Us</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" onPress={() => { void Linking.openURL(settings.facebookPageUrl); }} style={[styles.button, styles.facebookButton]}>
+        <Pressable accessibilityRole="button" onPress={() => { void Linking.openURL(facebookLink); }} style={[styles.button, styles.facebookButton]}>
           <Globe size={14} color="#39765F" />
           <Text style={styles.facebookText}>Visit Facebook Page</Text>
         </Pressable>

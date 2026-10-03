@@ -4,7 +4,6 @@ import { X } from 'lucide-react-native';
 import { ReportCard } from '../../components/ReportCard';
 import { ContactCard } from '../../components/ContactCard';
 import { OwnerContactCard } from '../../components/OwnerContactCard';
-import { FormField } from '../../components/FormField';
 import { StatusBadge } from '../../components/StatusBadge';
 import { EmptySearchIllustration } from '../../components/Illustrations';
 import { loadReportContact } from '../../services/reports';
@@ -15,22 +14,19 @@ interface SearchScreenProps {
   loading: boolean;
   settings: ContactSettings | null;
   currentUserId: string;
-  pendingClaimReportIds: Set<string>;
-  onSubmitVerification: (reportId: string, verificationInformation: string) => Promise<boolean>;
   onOwnerAction: (report: ItemReport, action: 'recovered' | 'closed') => void;
 }
 
 type KindFilter = 'all' | ReportKind;
 
-export function SearchScreen({ reports, loading, settings, currentUserId, pendingClaimReportIds, onSubmitVerification, onOwnerAction }: SearchScreenProps) {
+const FINAL_STATUSES = ['recovered', 'closed'];
+
+export function SearchScreen({ reports, loading, settings, currentUserId, onOwnerAction }: SearchScreenProps) {
   const [query, setQuery] = useState('');
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [selected, setSelected] = useState<ItemReport | null>(null);
   const [contactFor, setContactFor] = useState<{ reportId: string; contact: ReportContact | null } | null>(null);
-  const [claiming, setClaiming] = useState(false);
-  const [verification, setVerification] = useState('');
-  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (!selected) return;
@@ -57,12 +53,6 @@ export function SearchScreen({ reports, loading, settings, currentUserId, pendin
     { key: 'found', label: 'Found' },
   ];
 
-  const canClaim = selected
-    && selected.kind === 'found'
-    && OPEN_STATUSES.includes(selected.status)
-    && selected.createdBy !== currentUserId
-    && !pendingClaimReportIds.has(selected.id);
-
   const isOwnOpenReport = selected
     && selected.createdBy === currentUserId
     && OPEN_STATUSES.includes(selected.status);
@@ -88,22 +78,6 @@ export function SearchScreen({ reports, loading, settings, currentUserId, pendin
     ]);
   }
 
-  async function sendVerification() {
-    if (!selected) return;
-    if (verification.trim().length < 10) {
-      Alert.alert('Add more detail', 'Describe identifying details only the owner would know (at least 10 characters).');
-      return;
-    }
-    setSending(true);
-    const ok = await onSubmitVerification(selected.id, verification);
-    setSending(false);
-    if (ok) {
-      setClaiming(false);
-      setVerification('');
-      setSelected(null);
-    }
-  }
-
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text style={styles.eyebrow}>MARKET REPORTS</Text>
@@ -112,7 +86,7 @@ export function SearchScreen({ reports, loading, settings, currentUserId, pendin
       <TextInput
         accessibilityLabel="Search reports"
         onChangeText={setQuery}
-        placeholder="Try wallet or fish section"
+        placeholder="Search lost & found items"
         placeholderTextColor="#858B82"
         style={styles.searchInput}
         value={query}
@@ -139,11 +113,14 @@ export function SearchScreen({ reports, loading, settings, currentUserId, pendin
       </ScrollView>
       <Text style={styles.resultCount}>{visibleReports.length} {visibleReports.length === 1 ? 'report' : 'reports'}</Text>
       {loading ? <Text style={styles.loadingText}>Loading reports...</Text> : null}
-      {!loading && visibleReports.length > 0 ? visibleReports.map((report) => (
-        <Pressable key={report.id} onPress={() => setSelected(report)}>
-          <ReportCard report={report} showStatus />
-        </Pressable>
-      )) : null}
+      {!loading && visibleReports.length > 0 ? visibleReports.map((report) => {
+        const isFinal = FINAL_STATUSES.includes(report.status);
+        return (
+          <Pressable key={report.id} disabled={isFinal} onPress={() => setSelected(report)} style={isFinal && styles.finalReport}>
+            <ReportCard report={report} showStatus />
+          </Pressable>
+        );
+      }) : null}
       {!loading && !visibleReports.length ? (
         <View style={styles.emptyState}>
           <EmptySearchIllustration />
@@ -152,7 +129,7 @@ export function SearchScreen({ reports, loading, settings, currentUserId, pendin
         </View>
       ) : null}
 
-      <Modal animationType="slide" onRequestClose={() => setSelected(null)} transparent visible={selected !== null && !claiming}>
+      <Modal animationType="slide" onRequestClose={() => setSelected(null)} transparent visible={selected !== null}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <ScrollView>
@@ -176,18 +153,9 @@ export function SearchScreen({ reports, loading, settings, currentUserId, pendin
               {selected?.brand ? <DetailRow label="Brand" value={selected.brand} /> : null}
               {selected?.model ? <DetailRow label="Model" value={selected.model} /> : null}
               <Text style={styles.modalDescription}>{selected?.description}</Text>
-              <Text style={styles.privacyNote}>Identifying details are kept private and verified by the Admin during claims.</Text>
 
               {selected?.status === 'possible_match' ? (
-                <Text style={styles.reviewNote}>This report has a possible match. Matches are verified before recovery.</Text>
-              ) : null}
-
-              {canClaim ? (
-                <Pressable onPress={() => setClaiming(true)} style={styles.claimButton}>
-                  <Text style={styles.claimButtonText}>This may be my item</Text>
-                </Pressable>
-              ) : selected && pendingClaimReportIds.has(selected.id) ? (
-                <Text style={styles.pendingNote}>Your claim for this item is being reviewed.</Text>
+                <Text style={styles.reviewNote}>This report has a possible match. Contact the reporter below to verify in person.</Text>
               ) : null}
 
               {isOwnOpenReport ? (
@@ -201,41 +169,18 @@ export function SearchScreen({ reports, loading, settings, currentUserId, pendin
                 </View>
               ) : null}
 
-              {selected && selectedContact && selected.createdBy !== currentUserId && selectedContact.role !== 'admin' ? (
-                <OwnerContactCard contact={selectedContact} kind={selected.kind} />
+              {selected && selected.createdBy !== currentUserId ? (
+                <>
+                  {selectedContact && selectedContact.role !== 'admin' ? (
+                    <OwnerContactCard contact={selectedContact} kind={selected.kind} />
+                  ) : null}
+                  {settings ? <ContactCard settings={settings} /> : null}
+                </>
               ) : null}
-
-              {settings ? <ContactCard settings={settings} /> : null}
             </ScrollView>
             <Pressable accessibilityLabel="Close details" onPress={() => setSelected(null)} style={styles.closeButton}>
               <X size={18} color="#30372E" />
             </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal animationType="slide" onRequestClose={() => setClaiming(false)} transparent visible={claiming}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={styles.claimTitle}>Verify ownership</Text>
-              <Text style={styles.claimSubtitle}>
-                Describe details only the real owner would know about ‘{selected?.name}’ — unique marks, contents, purchase info, or proof of ownership. This stays private and is reviewed by the Admin.
-              </Text>
-              <FormField
-                label="Verification information"
-                multiline
-                onChangeText={setVerification}
-                placeholder="e.g. The wallet has a small tear on the left corner and contains a school ID..."
-                value={verification}
-              />
-              <Pressable disabled={sending} onPress={sendVerification} style={[styles.claimButton, sending && styles.claimButtonDisabled]}>
-                <Text style={styles.claimButtonText}>{sending ? 'Submitting...' : 'Submit verification'}</Text>
-              </Pressable>
-              <Pressable onPress={() => setClaiming(false)} style={styles.cancelButton}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </Pressable>
-            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -267,6 +212,7 @@ const styles = StyleSheet.create({
   selectedFilterText: { color: '#FFFFFF' },
   resultCount: { color: '#777D74', fontSize: 11, fontWeight: '700', marginBottom: 10 },
   loadingText: { color: '#777D74', fontSize: 12, paddingVertical: 12 },
+  finalReport: { opacity: 0.6 },
   emptyState: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E8EAE4', borderRadius: 8, padding: 24, alignItems: 'center' },
   emptyTitle: { color: '#252922', fontSize: 15, fontWeight: '700', marginTop: 10 },
   emptyText: { color: '#777D74', fontSize: 12, marginTop: 5, textAlign: 'center' },

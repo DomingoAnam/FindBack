@@ -119,7 +119,7 @@ export async function adminSetupAvailable(): Promise<boolean> {
 }
 
 function normalizeCode(value: string): string {
-  return value.replace(/[\s​-‍﻿ ]/g, '');
+  return value.replace(/[^A-Za-z0-9!@#$%^&*]/g, '');
 }
 
 export async function promoteToAdminWithSecret(secret: string): Promise<void> {

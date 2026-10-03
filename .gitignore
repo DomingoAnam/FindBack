@@ -31,7 +31,11 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+
+# secrets (contains the initial admin setup secret)
+supabase/schema.sql
 
 # typescript
 *.tsbuildinfo
